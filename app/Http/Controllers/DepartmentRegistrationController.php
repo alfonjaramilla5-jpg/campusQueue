@@ -45,18 +45,11 @@ class DepartmentRegistrationController extends Controller
         return redirect()->route('login')->with('status', 'Department application submitted. You can sign in after an administrator approves it.');
     }
 
-    public function index(Request $request): Response
+    public function index(Request $request): RedirectResponse
     {
         abort_unless($request->user()?->role === 'admin', 403);
 
-        $departments = Department::query()
-            ->orderByRaw("CASE WHEN status = 'pending' THEN 0 ELSE 1 END")
-            ->orderBy('name')
-            ->get(['id', 'name', 'email', 'status']);
-
-        return Inertia::render('admin/departments', [
-            'departments' => $departments,
-        ]);
+        return redirect()->route('dashboard');
     }
 
     public function approve(Request $request, Department $department): RedirectResponse

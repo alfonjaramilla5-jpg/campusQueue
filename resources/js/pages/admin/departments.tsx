@@ -24,8 +24,11 @@ export default function Departments({ departments }: Props) {
     const pending = departments.filter(
         (department) => department.status === 'pending',
     );
-    const active = departments.filter(
-        (department) => department.status !== 'pending',
+    const approved = departments.filter(
+        (department) => department.status === 'approved',
+    );
+    const inactive = departments.filter(
+        (department) => department.status === 'inactive',
     );
 
     return (
@@ -88,13 +91,13 @@ export default function Departments({ departments }: Props) {
                     <h2 className="text-lg font-semibold">
                         Approved departments
                     </h2>
-                    {active.length === 0 ? (
+                    {approved.length === 0 ? (
                         <p className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">
                             No approved departments yet.
                         </p>
                     ) : (
                         <div className="overflow-hidden rounded-xl border bg-card">
-                            {active.map((department) => (
+                            {approved.map((department) => (
                                 <article
                                     key={department.id}
                                     className="space-y-5 border-b p-5 last:border-b-0"
@@ -108,8 +111,8 @@ export default function Departments({ departments }: Props) {
                                                 {department.email}
                                             </p>
                                         </div>
-                                        <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800 capitalize">
-                                            {department.status}
+                                        <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800">
+                                            Approved
                                         </span>
                                     </div>
                                     <section className="space-y-3">
@@ -136,6 +139,60 @@ export default function Departments({ departments }: Props) {
                                             <AddServiceForm
                                                 departmentId={department.id}
                                             />
+                                        )}
+                                    </section>
+                                </article>
+                            ))}
+                        </div>
+                    )}
+                </section>
+                <section className="space-y-4">
+                    <h2 className="text-lg font-semibold">
+                        Inactive departments
+                    </h2>
+                    {inactive.length === 0 ? (
+                        <p className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">
+                            No inactive departments.
+                        </p>
+                    ) : (
+                        <div className="overflow-hidden rounded-xl border bg-card">
+                            {inactive.map((department) => (
+                                <article
+                                    key={department.id}
+                                    className="space-y-5 border-b p-5 last:border-b-0"
+                                >
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                        <div>
+                                            <p className="font-medium">
+                                                {department.name}
+                                            </p>
+                                            <p className="text-sm text-muted-foreground">
+                                                {department.email}
+                                            </p>
+                                        </div>
+                                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                                            Inactive
+                                        </span>
+                                    </div>
+                                    <section className="space-y-3">
+                                        <h3 className="font-semibold">
+                                            Services
+                                        </h3>
+                                        {department.services.length === 0 ? (
+                                            <p className="text-sm text-muted-foreground">
+                                                No services yet.
+                                            </p>
+                                        ) : (
+                                            <div className="space-y-3">
+                                                {department.services.map(
+                                                    (service) => (
+                                                        <ServiceEditor
+                                                            key={service.id}
+                                                            service={service}
+                                                        />
+                                                    ),
+                                                )}
+                                            </div>
                                         )}
                                     </section>
                                 </article>
