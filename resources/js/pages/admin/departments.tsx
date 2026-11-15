@@ -1,4 +1,5 @@
 import { Head, router, useForm } from '@inertiajs/react';
+import { useState } from 'react';
 
 type Service = {
     id: number;
@@ -270,106 +271,154 @@ function ServiceEditor({ service }: { service: Service }) {
         name: service.name,
         location: service.location ?? '',
     });
+    const [editing, setEditing] = useState(false);
 
     return (
-        <form
-            onSubmit={(event) => {
-                event.preventDefault();
-                form.put(`/admin/services/${service.id}`, {
-                    preserveScroll: true,
-                });
-            }}
-            className="space-y-3 rounded-lg border p-4"
-        >
+        <div className="space-y-3 rounded-lg border p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-medium">
                     {service.code} queue ·{' '}
                     {service.isActive ? 'Active' : 'Inactive'}
                 </p>
-                {service.isActive ? (
-                    <button
-                        type="button"
-                        disabled={form.processing}
-                        onClick={() => {
-                            if (
-                                window.confirm(
-                                    'Deactivate this service? Existing tickets will be preserved.',
-                                )
-                            ) {
-                                form.delete(
-                                    `/admin/services/${service.id}`,
+                <div className="flex items-center gap-4">
+                    {!editing && (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                form.setData({
+                                    name: service.name,
+                                    location: service.location ?? '',
+                                });
+                                form.clearErrors();
+                                setEditing(true);
+                            }}
+                            className="text-sm font-medium text-blue-700 hover:text-blue-900"
+                        >
+                            Edit
+                        </button>
+                    )}
+                    {service.isActive ? (
+                        <button
+                            type="button"
+                            disabled={form.processing}
+                            onClick={() => {
+                                if (
+                                    window.confirm(
+                                        'Deactivate this service? Existing tickets will be preserved.',
+                                    )
+                                ) {
+                                    form.delete(
+                                        `/admin/services/${service.id}`,
+                                        { preserveScroll: true },
+                                    );
+                                }
+                            }}
+                            className="text-sm font-medium text-red-700 hover:text-red-900 disabled:opacity-50"
+                        >
+                            Deactivate
+                        </button>
+                    ) : (
+                        <button
+                            type="button"
+                            disabled={form.processing}
+                            onClick={() =>
+                                form.patch(
+                                    `/admin/services/${service.id}/restore`,
                                     { preserveScroll: true },
-                                );
+                                )
                             }
-                        }}
-                        className="text-sm font-medium text-red-700 hover:text-red-900 disabled:opacity-50"
-                    >
-                        Deactivate
-                    </button>
-                ) : (
-                    <button
-                        type="button"
-                        disabled={form.processing}
-                        onClick={() =>
-                            form.patch(
-                                `/admin/services/${service.id}/restore`,
-                                { preserveScroll: true },
-                            )
-                        }
-                        className="text-sm font-medium text-blue-700 hover:text-blue-900 disabled:opacity-50"
-                    >
-                        Activate
-                    </button>
-                )}
+                            className="text-sm font-medium text-blue-700 hover:text-blue-900 disabled:opacity-50"
+                        >
+                            Activate
+                        </button>
+                    )}
+                </div>
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row">
-                <div className="flex-1">
-                    <input
-                        required
-                        maxLength={255}
-                        aria-label={`Service name for ${service.code}`}
-                        value={form.data.name}
-                        onChange={(event) =>
-                            form.setData('name', event.target.value)
-                        }
-                        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
-                    />
-                    {form.errors.name && (
-                        <p className="mt-1 text-sm text-red-600">
-                            {form.errors.name}
-                        </p>
-                    )}
-                </div>
-                <div className="flex-1">
-                    <input
-                        maxLength={255}
-                        aria-label={`Window or location for ${service.code}`}
-                        placeholder="Window or location"
-                        value={form.data.location}
-                        onChange={(event) =>
-                            form.setData('location', event.target.value)
-                        }
-                        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
-                    />
-                    {form.errors.location && (
-                        <p className="mt-1 text-sm text-red-600">
-                            {form.errors.location}
-                        </p>
-                    )}
-                </div>
-                <button
-                    type="submit"
-                    disabled={form.processing}
-                    className="rounded-lg border px-4 py-2 text-sm font-semibold hover:bg-muted disabled:opacity-50"
+            {editing ? (
+                <form
+                    onSubmit={(event) => {
+                        event.preventDefault();
+                        form.put(`/admin/services/${service.id}`, {
+                            preserveScroll: true,
+                            onSuccess: () => setEditing(false),
+                        });
+                    }}
+                    className="space-y-3"
                 >
-                    Save changes
-                </button>
-            </div>
-            {form.errors.service && (
-                <p role="alert" className="text-sm text-red-600">
-                    {form.errors.service}
-                </p>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                        <div className="flex-1">
+                            <input
+                                required
+                                maxLength={255}
+                                aria-label={`Service name for ${service.code}`}
+                                value={form.data.name}
+                                onChange={(event) =>
+                                    form.setData('name', event.target.value)
+                                }
+                                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                            />
+                            {form.errors.name && (
+                                <p className="mt-1 text-sm text-red-600">
+                                    {form.errors.name}
+                                </p>
+                            )}
+                        </div>
+                        <div className="flex-1">
+                            <input
+                                maxLength={255}
+                                aria-label={`Window or location for ${service.code}`}
+                                placeholder="Window or location"
+                                value={form.data.location}
+                                onChange={(event) =>
+                                    form.setData('location', event.target.value)
+                                }
+                                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm"
+                            />
+                            {form.errors.location && (
+                                <p className="mt-1 text-sm text-red-600">
+                                    {form.errors.location}
+                                </p>
+                            )}
+                        </div>
+                    </div>
+                    {form.errors.service && (
+                        <p role="alert" className="text-sm text-red-600">
+                            {form.errors.service}
+                        </p>
+                    )}
+                    <div className="flex justify-end gap-2">
+                        <button
+                            type="button"
+                            disabled={form.processing}
+                            onClick={() => {
+                                form.setData({
+                                    name: service.name,
+                                    location: service.location ?? '',
+                                });
+                                form.clearErrors();
+                                setEditing(false);
+                            }}
+                            className="rounded-lg border px-4 py-2 text-sm font-semibold hover:bg-muted disabled:opacity-50"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            disabled={form.processing}
+                            className="rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-50"
+                        >
+                            {form.processing ? 'Saving…' : 'Save changes'}
+                        </button>
+                    </div>
+                </form>
+            ) : (
+                <div>
+                    <p className="font-medium">{service.name}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                        {service.location || 'No window or location assigned'}
+                    </p>
+                </div>
             )}
-        </form>
+        </div>
     );
 }
