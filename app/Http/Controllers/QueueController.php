@@ -18,8 +18,12 @@ class QueueController extends Controller
     {
         abort_unless($service->is_active && $service->department()->where('status', 'approved')->exists(), 404);
 
-        $ticket = DB::transaction(function () use ($service): QueueTicket {
+        $ticket = DB::transaction(function () use ($service): ?QueueTicket {
             $lockedService = Service::query()->lockForUpdate()->findOrFail($service->id);
+            if (! $lockedService->is_active || $lockedService->isCurrentlyPaused()) {
+                return null;
+            }
+
             $today = today();
             $sequence = (int) $lockedService->tickets()
                 ->whereDate('queue_date', $today)
@@ -33,6 +37,12 @@ class QueueController extends Controller
                 'queue_date' => $today,
             ]);
         });
+
+        if ($ticket === null) {
+            return back()->withErrors([
+                'service' => 'This service is temporarily unavailable. Please check the queue display before trying again.',
+            ]);
+        }
 
         return redirect()->route('tickets.show', $ticket->tracking_token);
     }
@@ -63,6 +73,7 @@ class QueueController extends Controller
             'ticket' => [
                 'number' => $ticket->ticket_number,
                 'status' => $ticket->status,
+                'departmentId' => $ticket->service->department->id,
                 'department' => $ticket->service->department->name,
                 'service' => $ticket->service->name,
                 'date' => $ticket->queue_date->toDateString(),
@@ -78,7 +89,11 @@ class QueueController extends Controller
         abort_unless($service->department_id === $department->id && $service->is_active, 404);
 
         $result = DB::transaction(function () use ($service): string {
-            Service::query()->lockForUpdate()->findOrFail($service->id);
+            $lockedService = Service::query()->lockForUpdate()->findOrFail($service->id);
+            if ($lockedService->isCurrentlyPaused()) {
+                return 'paused';
+            }
+
             $today = today();
             $tickets = QueueTicket::query()
                 ->where('service_id', $service->id)
@@ -111,6 +126,10 @@ class QueueController extends Controller
             return back()->withErrors(['queue' => 'There are no waiting tickets for this service.']);
         }
 
+        if ($result === 'paused') {
+            return back()->withErrors(['queue' => 'This service is paused and cannot call another ticket.']);
+        }
+
         return back()->with('success', 'Next ticket called.');
     }
 
@@ -129,6 +148,80 @@ class QueueController extends Controller
         });
 
         return back()->with('success', "{$completedTicket->ticket_number} completed.");
+    }
+
+    public function skip(Request $request, QueueTicket $ticket): RedirectResponse
+    {
+        $department = $this->approvedDepartment($request);
+        abort_unless($ticket->service()->where('department_id', $department->id)->exists(), 404);
+
+        $nextTicketNumber = DB::transaction(function () use ($ticket): ?string {
+            $lockedService = Service::query()->lockForUpdate()->findOrFail($ticket->service_id);
+            $lockedTicket = QueueTicket::query()->lockForUpdate()->findOrFail($ticket->id);
+            abort_unless($lockedTicket->status === 'serving' && $lockedTicket->queue_date->isToday(), 409);
+
+            $lockedTicket->update(['status' => 'skipped']);
+
+            if ($lockedService->isCurrentlyPaused()) {
+                return 'paused';
+            }
+
+            $nextTicket = QueueTicket::query()
+                ->where('service_id', $lockedTicket->service_id)
+                ->whereDate('queue_date', today())
+                ->where('status', 'waiting')
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->first();
+
+            if (! $nextTicket) {
+                return null;
+            }
+
+            $nextTicket->update(['status' => 'serving']);
+
+            return $nextTicket->ticket_number;
+        });
+
+        if ($nextTicketNumber === 'paused') {
+            return back()->with('success', "{$ticket->ticket_number} skipped. The service is paused; the remaining queue was kept.");
+        }
+
+        if ($nextTicketNumber === null) {
+            return back()->with('success', "{$ticket->ticket_number} skipped. No more tickets are waiting.");
+        }
+
+        return back()->with('success', "{$ticket->ticket_number} skipped. {$nextTicketNumber} called next.");
+    }
+
+    public function pause(Request $request, Service $service): RedirectResponse
+    {
+        $department = $this->approvedDepartment($request);
+        abort_unless($service->department_id === $department->id && $service->is_active, 404);
+
+        DB::transaction(function () use ($service): void {
+            Service::query()
+                ->lockForUpdate()
+                ->findOrFail($service->id)
+                ->update(['paused_until' => now()->addHour()]);
+        });
+
+        return back()->with('success', "{$service->name} paused for one hour.");
+    }
+
+    public function resume(Request $request, Service $service): RedirectResponse
+    {
+        $department = $this->approvedDepartment($request);
+        abort_unless($service->department_id === $department->id && $service->is_active, 404);
+
+        DB::transaction(function () use ($service): void {
+            Service::query()
+                ->lockForUpdate()
+                ->findOrFail($service->id)
+                ->update(['paused_until' => null]);
+        });
+
+        return back()->with('success', "{$service->name} resumed.");
     }
 
     private function approvedDepartment(Request $request): Department

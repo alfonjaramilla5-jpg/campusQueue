@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 type Ticket = {
     number: string;
     status: 'waiting' | 'serving' | 'completed' | 'skipped' | 'cancelled';
+    departmentId: number;
     department: string;
     service: string;
     date: string;
@@ -87,6 +88,12 @@ export default function TicketPage({ ticket, ahead, currentlyServing }: Props) {
                             {currentlyServing ?? '—'}
                         </p>
                     </div>
+                    <Link
+                        href={`/display/${ticket.departmentId}`}
+                        className="mt-5 inline-block text-sm font-semibold text-blue-700 hover:text-blue-900"
+                    >
+                        View {ticket.department} live queue
+                    </Link>
                     {ticket.status === 'waiting' && (
                         <p className="mt-5 text-sm text-slate-600">
                             {ahead === 0

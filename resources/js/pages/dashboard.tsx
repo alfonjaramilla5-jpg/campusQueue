@@ -10,12 +10,17 @@ type Service = {
     id: number;
     name: string;
     code: string;
+    location: string | null;
+    isActive: boolean;
+    isPaused: boolean;
+    pausedUntil: string | null;
     waitingCount: number;
     waiting: Ticket[];
     serving: Ticket | null;
 };
 
 type Department = {
+    id: number;
     name: string;
     status: 'pending' | 'approved' | 'inactive';
 };
@@ -27,7 +32,7 @@ type Props = {
 };
 
 export default function Dashboard({ department, services, flash }: Props) {
-    const form = useForm({ name: '' });
+    const form = useForm({ name: '', location: '' });
 
     useEffect(() => {
         if (department.status !== 'approved') return;
@@ -58,12 +63,20 @@ export default function Dashboard({ department, services, flash }: Props) {
                         </p>
                     </div>
                     {department.status === 'approved' && (
-                        <a
-                            href="/"
-                            className="text-sm font-medium text-blue-700 hover:text-blue-900"
-                        >
-                            View public queue page
-                        </a>
+                        <div className="flex flex-wrap gap-4">
+                            <a
+                                href={`/display/${department.id}`}
+                                className="text-sm font-medium text-blue-700 hover:text-blue-900"
+                            >
+                                Open queue display
+                            </a>
+                            <a
+                                href="/"
+                                className="text-sm font-medium text-blue-700 hover:text-blue-900"
+                            >
+                                View public queue page
+                            </a>
+                        </div>
                     )}
                 </header>
 
@@ -103,6 +116,8 @@ export default function Dashboard({ department, services, flash }: Props) {
                                     <input
                                         required
                                         maxLength={255}
+                                        placeholder="Service name"
+                                        aria-label="Service name"
                                         value={form.data.name}
                                         onChange={(event) =>
                                             form.setData(
@@ -110,12 +125,31 @@ export default function Dashboard({ department, services, flash }: Props) {
                                                 event.target.value,
                                             )
                                         }
-                                        placeholder="e.g. Transcript of Records"
                                         className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
                                     />
                                     {form.errors.name && (
                                         <p className="mt-1 text-sm text-red-600">
                                             {form.errors.name}
+                                        </p>
+                                    )}
+                                </div>
+                                <div className="flex-1">
+                                    <input
+                                        maxLength={255}
+                                        placeholder="Window or location (optional)"
+                                        aria-label="Window or location (optional)"
+                                        value={form.data.location}
+                                        onChange={(event) =>
+                                            form.setData(
+                                                'location',
+                                                event.target.value,
+                                            )
+                                        }
+                                        className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100"
+                                    />
+                                    {form.errors.location && (
+                                        <p className="mt-1 text-sm text-red-600">
+                                            {form.errors.location}
                                         </p>
                                     )}
                                 </div>
@@ -161,6 +195,11 @@ export default function Dashboard({ department, services, flash }: Props) {
                                                     <p className="mt-1 text-sm text-muted-foreground">
                                                         {service.code} queue
                                                     </p>
+                                                    {service.location && (
+                                                        <p className="mt-1 text-sm font-medium text-muted-foreground">
+                                                            {service.location}
+                                                        </p>
+                                                    )}
                                                 </div>
                                                 <div className="rounded-lg bg-slate-100 px-3 py-2 text-center">
                                                     <p className="text-xl font-semibold">
@@ -170,6 +209,34 @@ export default function Dashboard({ department, services, flash }: Props) {
                                                         waiting
                                                     </p>
                                                 </div>
+                                            </div>
+                                            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                                                <p className="text-sm text-muted-foreground">
+                                                    {service.isPaused
+                                                        ? `Paused until ${new Date(service.pausedUntil ?? '').toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+                                                        : service.isActive
+                                                          ? 'Service is open'
+                                                          : 'Service is inactive'}
+                                                </p>
+                                                {service.isActive && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() =>
+                                                            router.post(
+                                                                `/staff/services/${service.id}/${service.isPaused ? 'resume' : 'pause'}`,
+                                                            )
+                                                        }
+                                                        className={`rounded-lg px-3 py-1.5 text-sm font-semibold text-white ${
+                                                            service.isPaused
+                                                                ? 'bg-emerald-700 hover:bg-emerald-800'
+                                                                : 'bg-amber-600 hover:bg-amber-700'
+                                                        }`}
+                                                    >
+                                                        {service.isPaused
+                                                            ? 'Resume service'
+                                                            : 'Pause for 1 hour'}
+                                                    </button>
+                                                )}
                                             </div>
 
                                             <div className="mt-5 rounded-lg border border-dashed p-4 text-center">
@@ -184,17 +251,40 @@ export default function Dashboard({ department, services, flash }: Props) {
                                                                     .ticket_number
                                                             }
                                                         </p>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() =>
-                                                                router.post(
-                                                                    `/staff/tickets/${service.serving?.id}/complete`,
-                                                                )
-                                                            }
-                                                            className="mt-3 rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800"
-                                                        >
-                                                            Complete ticket
-                                                        </button>
+                                                        <div className="mt-3 flex flex-wrap justify-center gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() =>
+                                                                    router.post(
+                                                                        `/staff/tickets/${service.serving?.id}/complete`,
+                                                                    )
+                                                                }
+                                                                className="rounded-lg bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-800"
+                                                            >
+                                                                Complete ticket
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    if (
+                                                                        window.confirm(
+                                                                                    service.isPaused
+                                                                                        ? 'Skip this ticket? The waiting queue will remain paused.'
+                                                                                        : 'Skip this ticket and call the next waiting student?',
+                                                                        )
+                                                                    ) {
+                                                                        router.post(
+                                                                            `/staff/tickets/${service.serving?.id}/skip`,
+                                                                        );
+                                                                    }
+                                                                }}
+                                                                className="rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700"
+                                                            >
+                                                                {service.isPaused
+                                                                    ? 'Skip ticket'
+                                                                    : 'Skip & call next'}
+                                                            </button>
+                                                        </div>
                                                     </>
                                                 ) : (
                                                     <p className="mt-1 text-lg text-muted-foreground">
@@ -235,7 +325,9 @@ export default function Dashboard({ department, services, flash }: Props) {
                                                 type="button"
                                                 disabled={
                                                     Boolean(service.serving) ||
-                                                    service.waitingCount === 0
+                                                    service.waitingCount === 0 ||
+                                                    service.isPaused ||
+                                                    !service.isActive
                                                 }
                                                 onClick={() =>
                                                     router.post(

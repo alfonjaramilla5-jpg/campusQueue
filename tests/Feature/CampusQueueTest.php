@@ -60,13 +60,17 @@ test('an approved department owner can create services with a generated queue co
     [$owner, $department] = createApprovedDepartment();
 
     $this->actingAs($owner)
-        ->post(route('services.store'), ['name' => 'Transcript of Records'])
+        ->post(route('services.store'), [
+            'name' => 'Transcript of Records',
+            'location' => 'Window 1',
+        ])
         ->assertRedirect();
 
     $this->assertDatabaseHas('services', [
         'department_id' => $department->id,
         'name' => 'Transcript of Records',
         'code' => 'TOR',
+        'location' => 'Window 1',
     ]);
 });
 
@@ -89,7 +93,156 @@ test('visitors can join a service queue and privately track their ticket', funct
         ->assertInertia(fn ($page) => $page
             ->component('campusqueue/ticket')
             ->where('ticket.number', 'GI-001')
+            ->where('ticket.departmentId', $department->id)
             ->where('ahead', 0));
+});
+
+test('a department display shows each active service and advances by groups of five', function () {
+    [, $department] = createApprovedDepartment();
+    $service = $department->services()->create([
+        'name' => 'General Inquiries',
+        'code' => 'GI',
+        'location' => 'Window 1',
+    ]);
+    $department->services()->create([
+        'name' => 'Transcript Requests',
+        'code' => 'TR',
+    ]);
+    $department->services()->create([
+        'name' => 'Inactive Service',
+        'code' => 'IS',
+        'is_active' => false,
+    ]);
+
+    foreach (range(1, 8) as $sequence) {
+        $service->tickets()->create([
+            'ticket_number' => sprintf('GI-%03d', $sequence),
+            'sequence' => $sequence,
+            'tracking_token' => str_pad((string) $sequence, 64, 'a', STR_PAD_LEFT),
+            'status' => $sequence <= 6 ? 'completed' : 'waiting',
+            'queue_date' => today(),
+        ]);
+    }
+
+    $this->get(route('departments.display', $department))
+        ->assertOk()
+        ->assertInertia(fn ($page) => $page
+            ->component('campusqueue/display')
+            ->where('department.name', 'Registrar')
+            ->has('services', 2)
+            ->where('services.0.name', 'General Inquiries')
+            ->where('services.0.location', 'Window 1')
+            ->where('services.0.batchNumber', 2)
+            ->has('services.0.tickets', 2)
+            ->where('services.0.tickets.0.ticketNumber', 'GI-007')
+            ->where('services.0.tickets.1.ticketNumber', 'GI-008')
+            ->where('services.0.tickets.0.status', 'waiting')
+            ->where('services.1.name', 'Transcript Requests')
+            ->has('services.1.tickets', 0));
+});
+
+test('a department display is unavailable until the department is approved', function () {
+    [, $department] = createApprovedDepartment();
+    $department->update(['status' => 'pending']);
+
+    $this->get(route('departments.display', $department))->assertNotFound();
+});
+
+test('staff can skip the serving ticket and automatically call the next ticket', function () {
+    [$owner, $department] = createApprovedDepartment();
+    $service = $department->services()->create([
+        'name' => 'Transcript Records',
+        'code' => 'TR',
+    ]);
+
+    $this->post(route('tickets.join', $service));
+    $this->post(route('tickets.join', $service));
+    $tickets = QueueTicket::orderBy('sequence')->get();
+    $first = $tickets[0];
+    $second = $tickets[1];
+
+    expect($tickets->pluck('ticket_number')->all())->toBe(['TR-001', 'TR-002']);
+
+    $this->actingAs($owner)
+        ->post(route('staff.services.call-next', $service))
+        ->assertRedirect();
+    $this->post(route('staff.tickets.skip', $first))
+        ->assertRedirect()
+        ->assertSessionHas('success', 'TR-001 skipped. TR-002 called next.');
+
+    expect($first->fresh()->status)->toBe('skipped')
+        ->and($second->fresh()->status)->toBe('serving');
+
+    $this->get(route('tickets.show', $first->tracking_token))
+        ->assertInertia(fn ($page) => $page->where('ticket.status', 'skipped'));
+});
+
+test('staff can pause a service while preserving its queue and resume early', function () {
+    [$owner, $department] = createApprovedDepartment();
+    $service = $department->services()->create([
+        'name' => 'Transcript Records',
+        'code' => 'TR',
+    ]);
+
+    $this->post(route('tickets.join', $service));
+    $this->post(route('tickets.join', $service));
+    $tickets = QueueTicket::orderBy('sequence')->get();
+    $first = $tickets[0];
+    $second = $tickets[1];
+
+    $this->actingAs($owner)
+        ->post(route('staff.services.call-next', $service))
+        ->assertRedirect();
+    $this->post(route('staff.services.pause', $service))->assertRedirect();
+
+    $pausedService = $service->fresh();
+    expect($pausedService->isCurrentlyPaused())->toBeTrue()
+        ->and($pausedService->paused_until->between(now()->addMinutes(59), now()->addMinutes(61)))->toBeTrue();
+
+    $this->get(route('departments.display', $department))
+        ->assertInertia(fn ($page) => $page->where('services.0.isPaused', true));
+    $this->get(route('home'))
+        ->assertInertia(fn ($page) => $page->where('departments.0.services.0.isPaused', true));
+
+    $this->post(route('tickets.join', $service))->assertSessionHasErrors('service');
+    $this->post(route('staff.services.call-next', $service))->assertSessionHasErrors('queue');
+
+    $this->post(route('staff.tickets.skip', $first))
+        ->assertRedirect()
+        ->assertSessionHas('success', 'TR-001 skipped. The service is paused; the remaining queue was kept.');
+
+    expect($first->fresh()->status)->toBe('skipped')
+        ->and($second->fresh()->status)->toBe('waiting');
+
+    $this->post(route('staff.services.resume', $service))->assertRedirect();
+
+    expect($service->fresh()->isCurrentlyPaused())->toBeFalse();
+
+    $this->post(route('staff.services.call-next', $service))->assertRedirect();
+    expect($second->fresh()->status)->toBe('serving');
+});
+
+test('a service automatically resumes when its one-hour pause expires', function () {
+    [$owner, $department] = createApprovedDepartment();
+    $service = $department->services()->create([
+        'name' => 'Transcript Records',
+        'code' => 'TR',
+    ]);
+
+    Carbon::setTestNow('2026-11-15 10:00:00');
+
+    $this->actingAs($owner)
+        ->post(route('staff.services.pause', $service))
+        ->assertRedirect();
+
+    expect($service->fresh()->paused_until->toDateTimeString())->toBe('2026-11-15 11:00:00');
+
+    Carbon::setTestNow('2026-11-15 11:00:01');
+
+    $this->get(route('departments.display', $department))
+        ->assertInertia(fn ($page) => $page->where('services.0.isPaused', false));
+
+    Carbon::setTestNow();
 });
 
 test('ticket numbers restart at one on the next day', function () {

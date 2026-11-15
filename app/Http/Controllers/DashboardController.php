@@ -14,11 +14,27 @@ class DashboardController extends Controller
         $user = $request->user();
 
         if ($user->role === 'admin') {
+            $departments = Department::query()
+                ->orderByRaw("CASE WHEN status = 'pending' THEN 0 ELSE 1 END")
+                ->orderBy('name')
+                ->with(['services' => fn ($query) => $query->orderBy('name')])
+                ->get(['id', 'name', 'email', 'status'])
+                ->map(fn (Department $department): array => [
+                    'id' => $department->id,
+                    'name' => $department->name,
+                    'email' => $department->email,
+                    'status' => $department->status,
+                    'services' => $department->services->map(fn ($service): array => [
+                        'id' => $service->id,
+                        'name' => $service->name,
+                        'code' => $service->code,
+                        'location' => $service->location,
+                        'isActive' => $service->is_active,
+                    ])->values(),
+                ]);
+
             return Inertia::render('admin/departments', [
-                'departments' => Department::query()
-                    ->orderByRaw("CASE WHEN status = 'pending' THEN 0 ELSE 1 END")
-                    ->orderBy('name')
-                    ->get(['id', 'name', 'email', 'status']),
+                'departments' => $departments,
             ]);
         }
 
@@ -34,6 +50,10 @@ class DashboardController extends Controller
                 'id' => $service->id,
                 'name' => $service->name,
                 'code' => $service->code,
+                'location' => $service->location,
+                'isActive' => $service->is_active,
+                'isPaused' => $service->isCurrentlyPaused(),
+                'pausedUntil' => $service->paused_until?->toIso8601String(),
                 'waitingCount' => (clone $tickets)->where('status', 'waiting')->count(),
                 'waiting' => (clone $tickets)
                     ->where('status', 'waiting')
@@ -48,6 +68,7 @@ class DashboardController extends Controller
 
         return Inertia::render('dashboard', [
             'department' => [
+                'id' => $department->id,
                 'name' => $department->name,
                 'status' => $department->status,
             ],

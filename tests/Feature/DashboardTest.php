@@ -22,3 +22,13 @@ test('authenticated users can visit the dashboard', function () {
     $response = $this->get(route('dashboard'));
     $response->assertOk();
 });
+
+test('users without a department are redirected to the department creation page', function () {
+    $user = User::factory()->create(['role' => 'admin']);
+    $this->actingAs($user);
+
+    $response = $this->get(route('dashboard'));
+    $response->assertRedirect(route('departments.create'));
+});
+
+

@@ -4,6 +4,8 @@ import { useState } from 'react';
 type Service = {
     id: number;
     name: string;
+    isPaused: boolean;
+    pausedUntil: string | null;
 };
 
 type Department = {
@@ -14,9 +16,10 @@ type Department = {
 
 type Props = {
     departments: Department[];
+    errors?: { service?: string };
 };
 
-export default function Home({ departments }: Props) {
+export default function Home({ departments, errors }: Props) {
     const [departmentId, setDepartmentId] = useState('');
     const [serviceId, setServiceId] = useState('');
     const [joining, setJoining] = useState(false);
@@ -127,6 +130,14 @@ export default function Home({ departments }: Props) {
                                         ))}
                                     </select>
                                 </label>
+                                {department && (
+                                    <Link
+                                        href={`/display/${department.id}`}
+                                        className="block text-center text-sm font-medium text-blue-700 hover:text-blue-900"
+                                    >
+                                        View {department.name} live queue
+                                    </Link>
+                                )}
                                 <label className="block text-sm font-medium">
                                     Service
                                     <select
@@ -148,11 +159,22 @@ export default function Home({ departments }: Props) {
                                             <option
                                                 key={service.id}
                                                 value={service.id}
+                                                disabled={service.isPaused}
                                             >
-                                                {service.name}
+                                                {service.isPaused
+                                                    ? `${service.name} — unavailable until ${new Date(service.pausedUntil ?? '').toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+                                                    : service.name}
                                             </option>
                                         ))}
                                     </select>
+                                    {errors?.service && (
+                                        <span
+                                            role="alert"
+                                            className="mt-2 block text-xs text-red-600"
+                                        >
+                                            {errors.service}
+                                        </span>
+                                    )}
                                     {department &&
                                         department.services.length === 0 && (
                                             <span className="mt-2 block text-xs text-slate-500">

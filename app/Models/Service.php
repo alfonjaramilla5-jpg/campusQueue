@@ -12,6 +12,8 @@ class Service extends Model
         'department_id',
         'name',
         'code',
+        'location',
+        'paused_until',
         'is_active',
     ];
 
@@ -19,7 +21,13 @@ class Service extends Model
     {
         return [
             'is_active' => 'boolean',
+            'paused_until' => 'datetime',
         ];
+    }
+
+    public function isCurrentlyPaused(): bool
+    {
+        return $this->paused_until !== null && $this->paused_until->isFuture();
     }
 
     public function department(): BelongsTo
